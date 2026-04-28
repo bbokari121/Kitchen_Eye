@@ -1,0 +1,35 @@
+# dataset folder - contains downloaded and processed data, do not push
+data/
+visualisations/
+
+# model weights and checkpoints - can be large, store locally or on Drive
+*.pt
+*.pth
+*.weights
+*.onnx
+*.pkl
+runs/
+checkpoints/
+weights/
+
+# jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# macos junk
+.DS_Store
+__MACOSX/
+
+# virtual environments
+venv/
+env/
+.env/
+
+# logs and temp output
+*.log
+logs/
