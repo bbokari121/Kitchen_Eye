@@ -1,12 +1,16 @@
 import sys
 import os
 import cv2
+from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QScrollArea, QFrame
 )
 from PyQt5.QtGui import QPixmap, QImage
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+
+from app.audio.voice_assistant import VoiceAssistantController
+from app.utils.config import Config
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 STYLE_PATH = os.path.join(os.path.dirname(__file__), "main_window.qss")
@@ -47,10 +51,14 @@ class CameraFrame(QFrame):
 
 
 class TranscriptEntry(QFrame):
+    replay = pyqtSignal(str)
+
     def __init__(self, text, time_str):
         super().__init__()
+        self._text = text
         self.setObjectName("transcriptEntry")
         self.setFixedHeight(46)
+        self.setCursor(Qt.PointingHandCursor)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 5, 10, 5)
         
@@ -68,7 +76,13 @@ class TranscriptEntry(QFrame):
         layout.addStretch()
         layout.addWidget(time_lbl)
 
+    def mousePressEvent(self, event):
+        self.replay.emit(self._text)
+        super().mousePressEvent(event)
+
 class MainWindow(QWidget):
+    _transcript_ready = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self.setObjectName("mainWindow")
@@ -77,9 +91,20 @@ class MainWindow(QWidget):
         self._cap = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._update_frame)
+        
+        # Initialize audio components
+        self.config = Config()
+        self.voice_assistant = VoiceAssistantController(
+            self.config,
+            on_command_detected=self._transcript_ready.emit,
+        )
+
+        self._transcript_ready.connect(self._add_transcript_entry)
+        
         self._load_styles()
         self.init_ui()
         self._start_camera()
+        self.voice_assistant.start()
 
     def get_separator(self):
         line = QFrame()
@@ -187,14 +212,16 @@ class MainWindow(QWidget):
         self.scroll_vbox.setContentsMargins(0, 0, 10, 0)
         self.scroll_vbox.setSpacing(10)
 
-        # Add sample transcript entries
-        self.scroll_vbox.addWidget(TranscriptEntry("Hot pan ahead", "10:34:12"))
-        self.scroll_vbox.addWidget(TranscriptEntry("Salt to your right", "10:34:15"))
-        self.scroll_vbox.addWidget(TranscriptEntry("Knife to right", "10:34:18"))
         self.scroll_vbox.addStretch()
 
         self.scroll_area.setWidget(self.scroll_content)
         main_layout.addWidget(self.scroll_area)
+
+    def _add_transcript_entry(self, text):
+        current_time = datetime.now().strftime("%H:%M:%S")
+        entry = TranscriptEntry(text, current_time)
+        entry.replay.connect(self.voice_assistant.replay)
+        self.scroll_vbox.insertWidget(self.scroll_vbox.count() - 1, entry)
 
     def _start_camera(self):
         self._cap = cv2.VideoCapture(0)
@@ -223,6 +250,7 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event):
         self._timer.stop()
+        self.voice_assistant.stop()
         if self._cap is not None:
             self._cap.release()
         super().closeEvent(event)
