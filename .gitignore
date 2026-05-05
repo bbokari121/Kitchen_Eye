@@ -16,6 +16,11 @@ runs/
 checkpoints/
 weights/
 
+# allow final exported models in models/ to be committed
+!models/
+!models/**/*.pt
+!models/**/*.pth
+
 # jupyter notebook checkpoints
 .ipynb_checkpoints/
 

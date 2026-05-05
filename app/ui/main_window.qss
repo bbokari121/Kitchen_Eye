@@ -1,0 +1,156 @@
+QWidget {
+    font-family: "Inter";
+    color: white;
+}
+
+QWidget#mainWindow {
+    background-color: #0F182C;
+}
+
+QLabel#titleLabel {
+    font-size: 28px;
+    font-weight: 700;
+    color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 #44ECD6,
+        stop: 0.5 #2AE5DE,
+        stop: 1 #00D5F1);
+    margin-left: 10px;
+}
+
+QFrame#liveBadge {
+    background-color: rgba(0, 130, 127, 51);
+    border: 3px solid #0E5D62;
+    border-radius: 16px;
+}
+
+QLabel#liveDot {
+    color: #00827F;
+    font-size: 15px;
+    font-weight: 700;
+    border: none;
+    background: transparent;
+}
+
+QLabel#liveText {
+    color: #47ECD5;
+    font-size: 15px;
+    font-weight: 700;
+    border: none;
+    background: transparent;
+}
+
+QFrame#batteryFrame {
+    background-color: rgba(84, 234, 253, 51);
+    border: 2px solid #00CBEB;
+    border-radius: 16px;
+}
+
+QLabel#batteryIcon,
+QLabel#batteryText {
+    border: none;
+    background: transparent;
+}
+
+QLabel#batteryText {
+    color: #54EAFD;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+QFrame#separatorLine {
+    background-color: #102F3D;
+    min-height: 3px;
+    max-height: 3px;
+    border: none;
+}
+
+QFrame#cameraContainer {
+    background-color: #1e293b;
+    border: 2px solid #1e293b;
+}
+
+QFrame#cameraInfoBox {
+    background-color: #161C25;
+    border-radius: 7px;
+    border: none;
+}
+
+QLabel#cameraInfoTitle {
+    color: #46E4D0;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+QLabel#cameraInfoMeta {
+    color: #05DEFE;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+QLabel#transcriptDot {
+    color: #007B94;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+QLabel#transcriptTitle {
+    color: #3EC6B7;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+QScrollArea,
+QScrollArea#transcriptScrollArea,
+QWidget#transcriptScrollContent {
+    border: none;
+    background-color: #0F182C;
+}
+
+QScrollBar:vertical {
+    border: none;
+    background: #0F182C;
+    width: 10px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background: #334155;
+    min-height: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+}
+
+QFrame#transcriptEntry {
+    background-color: rgba(23, 48, 66, 179);
+    border: 3px solid #173042;
+    border-radius: 12px;
+}
+
+QLabel#entryDot {
+    color: #00D3F3;
+    font-size: 18px;
+    font-weight: 700;
+    border: none;
+    background: transparent;
+}
+
+QLabel#entryMessage {
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+    background: transparent;
+}
+
+QLabel#entryTime {
+    color: #54EAFD;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+}
