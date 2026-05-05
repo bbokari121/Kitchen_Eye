@@ -1,3 +1,13 @@
+# Install with:
+#   python -m pip install -r requirements.txt
+#
+# macOS note (required before installing PyAudio):
+#   brew install portaudio
+#
+# Windows note:
+#   If PyAudio build fails, install Microsoft C++ Build Tools and run
+#   python -m pip install -r requirements.txt again.
+
 PyQt5>=5.15
 SpeechRecognition>=3.10
 pyttsx3>=2.90
