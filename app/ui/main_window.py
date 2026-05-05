@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QScrollArea, QFrame
 )
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
 from app.audio.voice_assistant import VoiceAssistantController
@@ -17,10 +17,13 @@ STYLE_PATH = os.path.join(os.path.dirname(__file__), "main_window.qss")
 
 class CameraFrame(QFrame):
     """Camera container where the feed fills the frame and info box overlays it."""
+    clicked = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("cameraContainer")
         self.setMinimumHeight(450)
+        self.setCursor(Qt.PointingHandCursor)
 
         # Feed label — sized to fill via resizeEvent
         self.feed_label = QLabel(self)
@@ -48,6 +51,10 @@ class CameraFrame(QFrame):
         self.feed_label.setGeometry(0, 0, self.width(), self.height())
         self.info_box.move(12, 12)
         super().resizeEvent(event)
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class TranscriptEntry(QFrame):
@@ -89,6 +96,7 @@ class MainWindow(QWidget):
         self.setWindowTitle("KitchenEye")
         self.resize(1200, 900)
         self._cap = None
+        self._camera_on = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._update_frame)
         
@@ -103,7 +111,7 @@ class MainWindow(QWidget):
         
         self._load_styles()
         self.init_ui()
-        self._start_camera()
+        self._set_camera_state(False)
         self.voice_assistant.start()
 
     def get_separator(self):
@@ -152,10 +160,10 @@ class MainWindow(QWidget):
 
         live_dot = QLabel("●")
         live_dot.setObjectName("liveDot")
-        live_text = QLabel("LIVE")
-        live_text.setObjectName("liveText")
+        self.live_text = QLabel("LIVE")
+        self.live_text.setObjectName("liveText")
         live_layout.addWidget(live_dot)
-        live_layout.addWidget(live_text)
+        live_layout.addWidget(self.live_text)
 
         battery_frame = QFrame()
         battery_frame.setObjectName("batteryFrame")
@@ -185,6 +193,7 @@ class MainWindow(QWidget):
         main_layout.addWidget(self.get_separator())
 
         self._cam_frame = CameraFrame()
+        self._cam_frame.clicked.connect(self._toggle_camera)
         self._camera_label = self._cam_frame.feed_label
         main_layout.addWidget(self._cam_frame)
 
@@ -221,14 +230,90 @@ class MainWindow(QWidget):
         current_time = datetime.now().strftime("%H:%M:%S")
         entry = TranscriptEntry(text, current_time)
         entry.replay.connect(self.voice_assistant.replay)
-        self.scroll_vbox.insertWidget(self.scroll_vbox.count() - 1, entry)
+        self.scroll_vbox.insertWidget(0, entry)
 
     def _start_camera(self):
         self._cap = cv2.VideoCapture(0)
         if self._cap.isOpened():
             self._timer.start(33)  # ~30 fps
+            self._camera_on = True
+            self.live_text.setText("LIVE")
+            self._cam_frame.info_box.show()
+            self._camera_label.clear()
         else:
+            self._set_camera_state(False)
             self._camera_label.setText("No camera found")
+
+    def _stop_camera(self):
+        self._timer.stop()
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
+        self._camera_on = False
+        self.live_text.setText("NOT LIVE")
+        self._show_camera_off_state()
+
+    def _toggle_camera(self):
+        if self._camera_on:
+            self._stop_camera()
+        else:
+            self._start_camera()
+
+    def _set_camera_state(self, enabled):
+        if enabled:
+            self._start_camera()
+        else:
+            self._stop_camera()
+
+    def _show_camera_off_state(self):
+        self._cam_frame.info_box.hide()
+        self._camera_label.setPixmap(self._build_camera_off_placeholder())
+
+    def _build_camera_off_placeholder(self):
+        width = max(self._camera_label.width(), 600)
+        height = max(self._camera_label.height(), 300)
+
+        pix = QPixmap(width, height)
+        pix.fill(Qt.transparent)
+
+        painter = QPainter(pix)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        eye_w = min(width * 0.16, 140)
+        eye_h = eye_w * 0.6
+        center_x = width / 2
+        center_y = height / 2 - 30
+
+        stroke = QPen(QColor("#8EA6B8"))
+        stroke.setWidth(6)
+        painter.setPen(stroke)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(int(center_x - eye_w / 2), int(center_y - eye_h / 2), int(eye_w), int(eye_h))
+        painter.drawEllipse(int(center_x - eye_h / 6), int(center_y - eye_h / 6), int(eye_h / 3), int(eye_h / 3))
+
+        slash = QPen(QColor("#8EA6B8"))
+        slash.setWidth(7)
+        painter.setPen(slash)
+        painter.drawLine(
+            int(center_x - eye_w / 2 - 12),
+            int(center_y + eye_h / 2 + 12),
+            int(center_x + eye_w / 2 + 12),
+            int(center_y - eye_h / 2 - 12),
+        )
+
+        painter.setPen(QColor("#C7D6E2"))
+        text_rect_y = int(center_y + eye_h / 2 + 28)
+        painter.drawText(
+            0,
+            text_rect_y,
+            width,
+            40,
+            Qt.AlignHCenter | Qt.AlignVCenter,
+            "Tap to turn on webcam",
+        )
+
+        painter.end()
+        return pix
 
     def _update_frame(self):
         if self._cap is None or not self._cap.isOpened():
@@ -253,7 +338,13 @@ class MainWindow(QWidget):
         self.voice_assistant.stop()
         if self._cap is not None:
             self._cap.release()
+            self._cap = None
         super().closeEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not self._camera_on:
+            self._show_camera_off_state()
 
     def run(self):
         self.show()
