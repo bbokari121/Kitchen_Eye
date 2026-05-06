@@ -14,7 +14,7 @@ from app.utils.config import Config
 class VoiceAssistantController:
     _PENDING_PREFIX_TTL_SECONDS = 8.0
     _REPROMPT_COOLDOWN_SECONDS = 2.5
-    _REPEAT_OBJECT_PROMPT = "could u repeat what object you wanted to find"
+    _REPEAT_OBJECT_PROMPT = "Could you repeat that"
 
     _QUERY_PREFIXES = ("where", "where is", "where is the", "is the")
     _PHRASE_ALIASES = {
@@ -33,43 +33,62 @@ class VoiceAssistantController:
     }
     _OBJECT_ALIASES = {
         "bowl": "bowl",
+        "bowls": "bowl",
         "bol": "bowl",
         "boll": "bowl",
         "ball": "bowl",
         "knife": "knife",
+        "knives": "knife",
         "knive": "knife",
         "naif": "knife",
         "nite": "knife",
         "cut": "cutting",
         "cutting": "cutting",
         "board": "board",
+        "boards": "board",
         "bored": "board",
         "bord": "board",
         "frying": "frying",
         "fry": "frying",
         "friing": "frying",
         "pan": "pan",
+        "pans": "pan",
         "pen": "pan",
+        "pens": "pan",
         "pun": "pan",
         "pot": "pot",
+        "pots": "pot",
+        "part": "pot",
+        "parts": "pot",
+        "port": "pot",
+        "ports": "pot",
         "pod": "pot",
+        "pods": "pot",
         "spot": "pot",
+        "spots": "pot",
         "stove": "stove",
+        "stoves": "stove",
         "stov": "stove",
         "store": "stove",
         "stow": "stove",
         "spoon": "spoon",
+        "spoons": "spoon",
+        "westburn": "spoon",
         "spun": "spoon",
         "soon": "spoon",
         "spatula": "spatula",
+        "spatulas": "spatula",
         "spatchula": "spatula",
         "spatuler": "spatula",
         "spatulaa": "spatula",
         "play": "plate",
+        "plays": "plate",
         "plait": "plate",
         "pleat": "plate",
         "place": "plate",
+        "places": "plate",
         "plate": "plate",
+        "plates": "plate",
         "plade": "plate",
         "planet": "plate",
         "play it": "plate",
@@ -100,6 +119,7 @@ class VoiceAssistantController:
         self._running = False
         self._listener_thread = None
         self._speak_queue = queue.Queue()
+        self._is_speaking = threading.Event()
         self._speak_thread = threading.Thread(target=self._speak_worker, daemon=True)
         self._speak_thread.start()
         self._allowed_lookup = self._build_allowed_lookup()
@@ -128,9 +148,13 @@ class VoiceAssistantController:
         while True:
             text = self._speak_queue.get()
             try:
+                # Block microphone processing while assistant audio is playing.
+                self._is_speaking.set()
                 self._tts.speak(text)
             except Exception as exc:
                 print(f"TTS error: {exc}")
+            finally:
+                self._is_speaking.clear()
 
     def _listen_loop(self):
         while self._running:
@@ -138,6 +162,10 @@ class VoiceAssistantController:
                 with sr.Microphone(sample_rate=16000) as source:
                     self._recognizer.adjust_for_ambient_noise(source, duration=0.4)
                     while self._running:
+                        if self._is_speaking.is_set():
+                            time.sleep(0.05)
+                            continue
+
                         try:
                             audio = self._recognizer.listen(
                                 source,
@@ -314,7 +342,7 @@ class VoiceAssistantController:
         normalized = self._normalize_text(combined)
         if normalized in self._QUERY_PREFIXES:
             self._set_pending_prefix(normalized)
-            print("Listen again just for object")
+            print("Listening Again")
             self._emit_repeat_object_prompt()
             return combined
 
@@ -322,6 +350,9 @@ class VoiceAssistantController:
             normalized = self._normalize_text(combined)
             if not self._looks_incomplete_query(normalized):
                 return combined
+
+            if self._is_speaking.is_set():
+                break
 
             try:
                 continuation_audio = self._recognizer.listen(
@@ -342,7 +373,7 @@ class VoiceAssistantController:
         if self._looks_incomplete_query(normalized):
             prefix, _ = self._extract_query_parts(normalized)
             self._set_pending_prefix(prefix or normalized)
-            print("Listen again just for object")
+            print("Listening Again")
             if normalized in self._QUERY_PREFIXES:
                 self._emit_repeat_object_prompt()
 

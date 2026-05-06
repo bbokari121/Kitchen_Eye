@@ -1,6 +1,8 @@
 import sys
 import os
+import json
 import cv2
+import psutil
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
@@ -33,17 +35,17 @@ class CameraFrame(QFrame):
         # Info overlay — fixed size, positioned top-left
         self.info_box = QFrame(self)
         self.info_box.setObjectName("cameraInfoBox")
-        self.info_box.setFixedSize(195, 58)
+        self.info_box.setFixedSize(160, 58)
 
         info_layout = QVBoxLayout(self.info_box)
         info_layout.setContentsMargins(10, 7, 10, 7)
         info_layout.setSpacing(2)
         title_lbl = QLabel("CAMERA FEED ACTIVE")
         title_lbl.setObjectName("cameraInfoTitle")
-        meta_lbl = QLabel("1920x1080 @ 30fps")
-        meta_lbl.setObjectName("cameraInfoMeta")
+        self.meta_lbl = QLabel("--")
+        self.meta_lbl.setObjectName("cameraInfoMeta")
         info_layout.addWidget(title_lbl)
-        info_layout.addWidget(meta_lbl)
+        info_layout.addWidget(self.meta_lbl)
 
         self.info_box.raise_()
 
@@ -55,6 +57,9 @@ class CameraFrame(QFrame):
     def mousePressEvent(self, event):
         self.clicked.emit()
         super().mousePressEvent(event)
+
+    def set_camera_meta(self, text):
+        self.meta_lbl.setText(text)
 
 
 class TranscriptEntry(QFrame):
@@ -99,6 +104,7 @@ class MainWindow(QWidget):
         self._camera_on = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._update_frame)
+        self._camera_meta_text = "--"
         
         # Initialize audio components
         self.config = Config()
@@ -108,11 +114,17 @@ class MainWindow(QWidget):
         )
 
         self._transcript_ready.connect(self._add_transcript_entry)
-        
+
         self._load_styles()
         self.init_ui()
         self._set_camera_state(False)
         self.voice_assistant.start()
+
+        # Battery refresh every 30 s
+        self._battery_timer = QTimer(self)
+        self._battery_timer.timeout.connect(self._update_battery)
+        self._battery_timer.start(30_000)
+        self._update_battery()  # populate immediately
 
     def get_separator(self):
         line = QFrame()
@@ -178,10 +190,10 @@ class MainWindow(QWidget):
         _batt_px = QPixmap(os.path.join(ASSETS_DIR, "battery_icon.png"))
         if not _batt_px.isNull():
             batt_icon.setPixmap(_batt_px.scaled(22, 22, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        batt_text = QLabel("80%")
-        batt_text.setObjectName("batteryText")
+        self._batt_text = QLabel("--")
+        self._batt_text.setObjectName("batteryText")
         batt_layout.addWidget(batt_icon)
-        batt_layout.addWidget(batt_text)
+        batt_layout.addWidget(self._batt_text)
 
         right_header.addWidget(live_badge)
         right_header.addWidget(battery_frame)
@@ -226,6 +238,16 @@ class MainWindow(QWidget):
         self.scroll_area.setWidget(self.scroll_content)
         main_layout.addWidget(self.scroll_area)
 
+    def _update_battery(self):
+        batt = psutil.sensors_battery()
+        if batt is not None:
+            pct = int(batt.percent)
+            charging = batt.power_plugged
+            label = f"{pct}%"
+        else:
+            label = "N/A"
+        self._batt_text.setText(label)
+
     def _add_transcript_entry(self, text):
         current_time = datetime.now().strftime("%H:%M:%S")
         entry = TranscriptEntry(text, current_time)
@@ -233,14 +255,32 @@ class MainWindow(QWidget):
         self.scroll_vbox.insertWidget(0, entry)
 
     def _start_camera(self):
-        self._cap = cv2.VideoCapture(0)
+        device = self.config.get("camera.device_index", 0)
+        self._cap = cv2.VideoCapture(device)
         if self._cap.isOpened():
+            frame_size = None
+            ret, frame = self._cap.read()
+            if ret and frame is not None:
+                h, w = frame.shape[:2]
+                frame_size = (w, h)
+            self._update_camera_meta_from_capture(
+                fallback_size=frame_size,
+                log_to_terminal=True,
+                device_index=device,
+            )
             self._timer.start(33)  # ~30 fps
             self._camera_on = True
             self.live_text.setText("LIVE")
             self._cam_frame.info_box.show()
             self._camera_label.clear()
         else:
+            self._log_camera_startup(
+                detected=False,
+                device_index=device,
+                width=None,
+                height=None,
+                fps=None,
+            )
             self._set_camera_state(False)
             self._camera_label.setText("No camera found")
 
@@ -268,6 +308,53 @@ class MainWindow(QWidget):
     def _show_camera_off_state(self):
         self._cam_frame.info_box.hide()
         self._camera_label.setPixmap(self._build_camera_off_placeholder())
+
+    def _log_camera_startup(self, detected, device_index, width, height, fps):
+        payload = {
+            "camera_start": {
+                "detected": detected,
+                "device_index": device_index,
+                "resolution": {
+                    "width": width,
+                    "height": height,
+                },
+                "fps": fps,
+            }
+        }
+        print(json.dumps(payload), flush=True)
+
+    def _update_camera_meta_from_capture(self, fallback_size=None, log_to_terminal=False, device_index=None):
+        if self._cap is None or not self._cap.isOpened():
+            return
+
+        width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        fps = float(self._cap.get(cv2.CAP_PROP_FPS) or 0.0)
+
+        # Some backends return 0 for size/FPS before the first successful read.
+        if fallback_size and (width <= 0 or height <= 0):
+            width, height = fallback_size
+
+        if width > 0 and height > 0:
+            if fps > 0:
+                meta_text = f"{width}x{height} | {fps:.2f} FPS"
+            else:
+                meta_text = f"{width}x{height} | FPS n/a"
+        else:
+            meta_text = "Camera active"
+
+        if meta_text != self._camera_meta_text:
+            self._camera_meta_text = meta_text
+            self._cam_frame.set_camera_meta(meta_text)
+
+        if log_to_terminal:
+            self._log_camera_startup(
+                detected=True,
+                device_index=device_index,
+                width=(width if width > 0 else None),
+                height=(height if height > 0 else None),
+                fps=(round(fps, 2) if fps > 0 else None),
+            )
 
     def _build_camera_off_placeholder(self):
         width = max(self._camera_label.width(), 600)
@@ -323,6 +410,7 @@ class MainWindow(QWidget):
             return
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = frame.shape
+        self._update_camera_meta_from_capture(fallback_size=(w, h))
         img = QImage(frame.data, w, h, ch * w, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(img)
         self._camera_label.setPixmap(

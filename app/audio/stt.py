@@ -30,13 +30,17 @@ class STT:
         print("Listening...")
 
     def _record(self):
-        stream = self._pa.open(
+        input_device = self.config.get("audio.input_device_index", None)
+        open_kwargs = dict(
             format=_FORMAT,
             channels=_CHANNELS,
             rate=_RATE,
             input=True,
             frames_per_buffer=_CHUNK,
         )
+        if input_device is not None:
+            open_kwargs["input_device_index"] = int(input_device)
+        stream = self._pa.open(**open_kwargs)
         while self._recording:
             data = stream.read(_CHUNK, exception_on_overflow=False)
             self._frames.append(data)

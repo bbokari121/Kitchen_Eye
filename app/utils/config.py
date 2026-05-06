@@ -8,6 +8,14 @@ _DEFAULTS = {
     "audio.language": "en",
     "inference.confidence": 0.5,
     "inference.iou_threshold": 0.45,
+    # Device selection — set these in config.json to target specific hardware
+    # e.g. Meta glasses appear as a webcam and audio device in the OS.
+    # camera.device_index: OpenCV device index (0 = first/default webcam)
+    # audio.input_device_index: PyAudio device index for microphone (null = OS default)
+    # audio.output_device_index: reserved for future speaker routing (null = OS default)
+    "camera.device_index": 0,
+    "audio.input_device_index": None,
+    "audio.output_device_index": None,
 }
 
 
