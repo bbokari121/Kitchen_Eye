@@ -1,5 +1,4 @@
 # temporary ignored
-training_models/
 
 
 # dataset folder - contains downloaded and processed data, do not push
@@ -46,3 +45,6 @@ logs/
 # YOLO/MLflow specific
 *.cache
 mlruns/
+
+# vscode settings
+.vscode/
