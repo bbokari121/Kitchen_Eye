@@ -6,13 +6,15 @@ import psutil
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-    QScrollArea, QFrame
+    QScrollArea, QFrame, QPushButton
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
 from app.audio.voice_assistant import VoiceAssistantController
 from app.utils.config import Config
+from app.ui.upload_video import VideoPlayer
+from models.detector import YOLODetector
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 STYLE_PATH = os.path.join(os.path.dirname(__file__), "main_window.qss")
@@ -81,6 +83,7 @@ class MainWindow(QWidget):
         self.resize(1200, 900)
         self._cap = None
         self._camera_on = False
+        self._video_mode = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._update_frame)
         
@@ -90,6 +93,13 @@ class MainWindow(QWidget):
             self.config,
             on_command_detected=self._transcript_ready.emit,
         )
+
+        self._detector = YOLODetector()
+        self._video_player = VideoPlayer(
+            frame_callback=self._on_video_frame,
+            detector=self._detector,
+        )
+        self._video_player.set_finished_callback(self._on_video_ended)
 
         self._transcript_ready.connect(self._add_transcript_entry)
 
@@ -182,6 +192,20 @@ class MainWindow(QWidget):
 
         main_layout.addWidget(self.get_separator())
 
+        # Mode selection bar
+        mode_bar = QHBoxLayout()
+        mode_bar.setSpacing(8)
+        self._btn_webcam = QPushButton("Webcam")
+        self._btn_webcam.setObjectName("modeButtonActive")
+        self._btn_webcam.clicked.connect(self._switch_to_webcam)
+        self._btn_upload = QPushButton("Upload Video")
+        self._btn_upload.setObjectName("modeButton")
+        self._btn_upload.clicked.connect(self._switch_to_upload)
+        mode_bar.addWidget(self._btn_webcam)
+        mode_bar.addWidget(self._btn_upload)
+        mode_bar.addStretch()
+        main_layout.addLayout(mode_bar)
+
         self._cam_frame = CameraFrame()
         self._cam_frame.clicked.connect(self._toggle_camera)
         self._camera_label = self._cam_frame.feed_label
@@ -273,6 +297,8 @@ class MainWindow(QWidget):
         self._show_camera_off_state()
 
     def _toggle_camera(self):
+        if self._video_mode:
+            return
         if self._camera_on:
             self._stop_camera()
         else:
@@ -285,7 +311,12 @@ class MainWindow(QWidget):
             self._stop_camera()
 
     def _show_camera_off_state(self):
-        self._camera_label.setPixmap(self._build_camera_off_placeholder())
+        msg = (
+            "Upload a video to begin"
+            if self._video_mode
+            else "Tap to turn on webcam"
+        )
+        self._camera_label.setPixmap(self._build_camera_off_placeholder(msg))
 
     def _log_camera_startup(self, detected, device_index, width, height, fps):
         payload = {
@@ -301,7 +332,7 @@ class MainWindow(QWidget):
         }
         print(json.dumps(payload), flush=True)
 
-    def _build_camera_off_placeholder(self):
+    def _build_camera_off_placeholder(self, message="Tap to turn on webcam"):
         width = max(self._camera_label.width(), 600)
         height = max(self._camera_label.height(), 300)
 
@@ -341,7 +372,7 @@ class MainWindow(QWidget):
             width,
             40,
             Qt.AlignHCenter | Qt.AlignVCenter,
-            "Tap to turn on webcam",
+            message,
         )
 
         painter.end()
@@ -365,8 +396,60 @@ class MainWindow(QWidget):
             )
         )
 
+    def _switch_to_webcam(self):
+        if self._video_player.is_playing():
+            self._video_player.stop()
+        self._video_mode = False
+        self._btn_webcam.setObjectName("modeButtonActive")
+        self._btn_upload.setObjectName("modeButton")
+        self._btn_webcam.setStyle(self._btn_webcam.style())
+        self._btn_upload.setStyle(self._btn_upload.style())
+        # Keep webcam tab selected but camera OFF until user taps the feed.
+        if self._camera_on:
+            self._stop_camera()
+        else:
+            self.live_text.setText("NOT LIVE")
+            self._show_camera_off_state()
+
+    def _switch_to_upload(self):
+        if self._camera_on:
+            self._stop_camera()
+        self._video_mode = True
+        self._btn_upload.setObjectName("modeButtonActive")
+        self._btn_webcam.setObjectName("modeButton")
+        self._btn_upload.setStyle(self._btn_upload.style())
+        self._btn_webcam.setStyle(self._btn_webcam.style())
+        path = self._video_player.open_file_dialog(parent=self)
+        if path:
+            self.live_text.setText("VIDEO")
+            if not self._video_player.start(path):
+                self.live_text.setText("NOT LIVE")
+                self._show_camera_off_state()
+        else:
+            # User cancelled — revert to webcam mode
+            self._switch_to_webcam()
+
+    def _on_video_frame(self, rgb_frame):
+        h, w, ch = rgb_frame.shape
+        img = QImage(rgb_frame.data, w, h, ch * w, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(img)
+        self._camera_label.setPixmap(
+            pixmap.scaled(
+                self._camera_label.size(),
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation,
+            )
+        )
+
+    def _on_video_ended(self):
+        if not self._video_mode:
+            return
+        self.live_text.setText("NOT LIVE")
+        self._show_camera_off_state()
+
     def closeEvent(self, event):
         self._timer.stop()
+        self._video_player.stop()
         self.voice_assistant.stop()
         if self._cap is not None:
             self._cap.release()

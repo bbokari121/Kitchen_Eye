@@ -9,6 +9,8 @@
 #   python -m pip install -r requirements.txt again.
 
 PyQt5>=5.15
+opencv-python>=4.8
+ultralytics>=8.0
 SpeechRecognition>=3.10
 pyttsx3>=2.90
 PyAudio>=0.2.14
