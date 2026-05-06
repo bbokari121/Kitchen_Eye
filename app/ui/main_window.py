@@ -18,7 +18,7 @@ ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 STYLE_PATH = os.path.join(os.path.dirname(__file__), "main_window.qss")
 
 class CameraFrame(QFrame):
-    """Camera container where the feed fills the frame and info box overlays it."""
+    """Camera container where the feed fills the frame."""
     clicked = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -32,34 +32,13 @@ class CameraFrame(QFrame):
         self.feed_label.setObjectName("cameraFeedLabel")
         self.feed_label.setAlignment(Qt.AlignCenter)
 
-        # Info overlay — fixed size, positioned top-left
-        self.info_box = QFrame(self)
-        self.info_box.setObjectName("cameraInfoBox")
-        self.info_box.setFixedSize(160, 58)
-
-        info_layout = QVBoxLayout(self.info_box)
-        info_layout.setContentsMargins(10, 7, 10, 7)
-        info_layout.setSpacing(2)
-        title_lbl = QLabel("CAMERA FEED ACTIVE")
-        title_lbl.setObjectName("cameraInfoTitle")
-        self.meta_lbl = QLabel("--")
-        self.meta_lbl.setObjectName("cameraInfoMeta")
-        info_layout.addWidget(title_lbl)
-        info_layout.addWidget(self.meta_lbl)
-
-        self.info_box.raise_()
-
     def resizeEvent(self, event):
         self.feed_label.setGeometry(0, 0, self.width(), self.height())
-        self.info_box.move(12, 12)
         super().resizeEvent(event)
 
     def mousePressEvent(self, event):
         self.clicked.emit()
         super().mousePressEvent(event)
-
-    def set_camera_meta(self, text):
-        self.meta_lbl.setText(text)
 
 
 class TranscriptEntry(QFrame):
@@ -104,7 +83,6 @@ class MainWindow(QWidget):
         self._camera_on = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._update_frame)
-        self._camera_meta_text = "--"
         
         # Initialize audio components
         self.config = Config()
@@ -263,15 +241,16 @@ class MainWindow(QWidget):
             if ret and frame is not None:
                 h, w = frame.shape[:2]
                 frame_size = (w, h)
-            self._update_camera_meta_from_capture(
-                fallback_size=frame_size,
-                log_to_terminal=True,
+            self._log_camera_startup(
+                detected=True,
                 device_index=device,
+                width=(frame_size[0] if frame_size else None),
+                height=(frame_size[1] if frame_size else None),
+                fps=None,
             )
             self._timer.start(33)  # ~30 fps
             self._camera_on = True
             self.live_text.setText("LIVE")
-            self._cam_frame.info_box.show()
             self._camera_label.clear()
         else:
             self._log_camera_startup(
@@ -306,7 +285,6 @@ class MainWindow(QWidget):
             self._stop_camera()
 
     def _show_camera_off_state(self):
-        self._cam_frame.info_box.hide()
         self._camera_label.setPixmap(self._build_camera_off_placeholder())
 
     def _log_camera_startup(self, detected, device_index, width, height, fps):
@@ -322,39 +300,6 @@ class MainWindow(QWidget):
             }
         }
         print(json.dumps(payload), flush=True)
-
-    def _update_camera_meta_from_capture(self, fallback_size=None, log_to_terminal=False, device_index=None):
-        if self._cap is None or not self._cap.isOpened():
-            return
-
-        width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-        height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-        fps = float(self._cap.get(cv2.CAP_PROP_FPS) or 0.0)
-
-        # Some backends return 0 for size/FPS before the first successful read.
-        if fallback_size and (width <= 0 or height <= 0):
-            width, height = fallback_size
-
-        if width > 0 and height > 0:
-            if fps > 0:
-                meta_text = f"{width}x{height} | {fps:.2f} FPS"
-            else:
-                meta_text = f"{width}x{height} | FPS n/a"
-        else:
-            meta_text = "Camera active"
-
-        if meta_text != self._camera_meta_text:
-            self._camera_meta_text = meta_text
-            self._cam_frame.set_camera_meta(meta_text)
-
-        if log_to_terminal:
-            self._log_camera_startup(
-                detected=True,
-                device_index=device_index,
-                width=(width if width > 0 else None),
-                height=(height if height > 0 else None),
-                fps=(round(fps, 2) if fps > 0 else None),
-            )
 
     def _build_camera_off_placeholder(self):
         width = max(self._camera_label.width(), 600)
@@ -410,7 +355,6 @@ class MainWindow(QWidget):
             return
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = frame.shape
-        self._update_camera_meta_from_capture(fallback_size=(w, h))
         img = QImage(frame.data, w, h, ch * w, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(img)
         self._camera_label.setPixmap(
