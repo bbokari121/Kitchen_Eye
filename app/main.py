@@ -1,4 +1,5 @@
 # starts the app, connects everything together, entry point
+import torch
 import sys
 import os
 
